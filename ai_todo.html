@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI‑Assisted To‑Do</title>
+<style>
+  :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--fg:#e5e7eb;--accent:#22d3ee;--ok:#34d399;--warn:#f59e0b;--danger:#f43f5e}
+  *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;background:linear-gradient(120deg,#0f172a,#111827);color:var(--fg);min-height:100vh;display:flex;align-items:center;justify-content:center}
+  .app{width:min(920px,94vw);padding:20px}
+  .card{background:rgba(17,24,39,.8);backdrop-filter: blur(6px);border:1px solid #1f2937;border-radius:18px;box-shadow:0 10px 25px rgba(0,0,0,.35)}
+  header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:18px 20px 10px}
+  h1{margin:0;font-size:22px;letter-spacing:.3px}
+  .badges{display:flex;gap:8px;align-items:center}
+  .badge{font-size:12px;padding:6px 10px;border-radius:999px;background:#0b1220;border:1px solid #1f2937;color:var(--muted)}
+  .ai{color:var(--accent);border-color:rgba(34,211,238,.5)}
+  .controls{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:0 20px 16px}
+  input,button,select{border-radius:12px;border:1px solid #253047;background:#0b1220;color:var(--fg);padding:10px 12px;font-size:14px;outline:none}
+  button{cursor:pointer}
+  button.primary{background:linear-gradient(90deg,#22d3ee,#38bdf8);color:#06202a;border:none}
+  button.ghost{background:transparent}
+  .layout{display:grid;grid-template-columns:1fr 280px;gap:14px;padding:0 14px 16px 20px}
+  .list{padding:8px;border-left:1px dashed #233047}
+  .item{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;margin:8px 0;border:1px solid #1f2937;border-radius:14px;background:#0b1220}
+  .item.done{opacity:.62}
+  .title{font-weight:600}
+  .meta{font-size:12px;color:var(--muted)}
+  .right{display:flex;gap:6px}
+  .pill{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #223048;color:#a5b4fc}
+  .sidebar{padding:12px 12px 16px;border-left:1px solid #1f2937}
+  .sidegroup{margin:12px 0}
+  .sidegroup h3{font-size:13px;margin:0 0 8px;color:#cbd5e1;font-weight:600}
+  .filters button{padding:6px 10px;border-radius:10px}
+  .filters .active{border-color:var(--accent);color:var(--accent)}
+  .muted{color:var(--muted);font-size:12px}
+  .footer{display:flex;justify-content:space-between;align-items:center;padding:10px 20px 18px;border-top:1px solid #1f2937;font-size:12px;color:var(--muted)}
+  .link{color:var(--accent);text-decoration:none}
+  .drag{cursor:grab}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+  <div class="app card" id="app">
+    <header>
+      <h1>AI‑Assisted To‑Do</h1>
+      <div class="badges">
+        <span class="badge">Local‑first</span>
+        <span class="badge ai">Built with ChatGPT</span>
+      </div>
+    </header>
+
+    <div class="controls">
+      <input id="taskInput" placeholder="Add a task… e.g., Implement API pagination" />
+      <input id="dueInput" type="date" />
+      <button id="addBtn" class="primary">Add</button>
+    </div>
+
+    <div class="layout">
+      <div class="list" id="list"></div>
+      <aside class="sidebar">
+        <div class="sidegroup">
+          <h3>Quick Actions</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button id="aiSuggest" title="Generate suggestions using prompts">AI Suggest</button>
+            <button id="clearDone" class="ghost">Clear Done</button>
+            <button id="exportBtn" class="ghost">Export</button>
+            <input id="importFile" type="file" accept="application/json" class="hidden">
+            <button id="importBtn" class="ghost">Import</button>
+          </div>
+          <p class="muted" style="margin-top:8px">Tip: Press <b>Enter</b> to add. Drag items to reorder.</p>
+        </div>
+        <div class="sidegroup">
+          <h3>Filters</h3>
+          <div class="filters" style="display:flex;gap:8px;flex-wrap:wrap">
+            <button data-filter="all" class="active">All</button>
+            <button data-filter="open">Open</button>
+            <button data-filter="done">Done</button>
+            <button data-filter="today">Due Today</button>
+            <button data-filter="overdue" style="border-color:var(--warn);color:var(--warn)">Overdue</button>
+          </div>
+        </div>
+        <div class="sidegroup">
+          <h3>Search & Tags</h3>
+          <input id="search" placeholder="Search…" style="width:100%;margin-bottom:8px">
+          <input id="tagInput" placeholder="#tag (optional)" style="width:100%">
+        </div>
+        <div class="sidegroup">
+          <h3>AI Helper (Optional)</h3>
+          <p class="muted">Enter a prompt after clicking <b>AI Suggest</b>. The app will locally generate suggested tasks from templates (no keys needed).</p>
+        </div>
+      </aside>
+    </div>
+
+    <div class="footer">
+      <span id="count" class="muted">0 items</span>
+      <a class="link" href="https://github.com/new?template_name=blank" target="_blank" rel="noopener">Deploy to GitHub Pages (readme inside)</a>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const $ = sel => document.querySelector(sel);
+  const listEl = $("#list");
+  const taskInput = $("#taskInput");
+  const dueInput = $("#dueInput");
+  const addBtn = $("#addBtn");
+  const tagInput = $("#tagInput");
+  const search = $("#search");
+  const countEl = $("#count");
+  const filters = document.querySelectorAll(".filters button");
+  const importBtn = $("#importBtn");
+  const importFile = $("#importFile");
+  const exportBtn = $("#exportBtn");
+  const clearDone = $("#clearDone");
+  const aiSuggest = $("#aiSuggest");
+
+  let state = load();
+  let filter = "all";
+  let dragSrcId = null;
+
+  render();
+
+  function uid(){ return Math.random().toString(36).slice(2,10); }
+  function todayStr(){ return new Date().toISOString().slice(0,10); }
+
+  function load(){
+    try{ return JSON.parse(localStorage.getItem("todo.ai")||"[]"); }catch(e){ return []; }
+  }
+  function save(){ localStorage.setItem("todo.ai", JSON.stringify(state)); }
+
+  function addTask(title, due=null, tag=null){
+    if(!title.trim()) return;
+    state.push({id:uid(), title:title.trim(), done:false, due:due||"", tag: (tag||"").trim()});
+    save(); render();
+  }
+
+  function updateCount(){
+    const open = state.filter(t=>!t.done).length;
+    countEl.textContent = `${state.length} items • ${open} open`;
+  }
+
+  function matchesFilter(t){
+    const d = t.due;
+    const today = todayStr();
+    if(filter==="open") return !t.done;
+    if(filter==="done") return t.done;
+    if(filter==="today") return d===today;
+    if(filter==="overdue") return !t.done && d && d<today;
+    return true;
+  }
+
+  function matchesSearch(t, q){
+    if(!q) return true;
+    q = q.toLowerCase();
+    return t.title.toLowerCase().includes(q) || (t.tag||"").toLowerCase().includes(q);
+  }
+
+  function itemTemplate(t){
+    const el = document.createElement("div");
+    el.className = "item drag"+(t.done?" done":"");
+    el.draggable = true;
+    el.dataset.id = t.id;
+    el.innerHTML = `
+      <input type="checkbox" ${t.done?"checked":""} aria-label="toggle">
+      <div>
+        <div class="title" contenteditable="true" spellcheck="false">${escapeHtml(t.title)}</div>
+        <div class="meta">
+          ${t.due?`Due: <b>${t.due}</b>`:""} ${t.tag?`<span class="pill">${escapeHtml(t.tag)}</span>`:""}
+        </div>
+      </div>
+      <div class="right">
+        <button class="ghost" data-act="edit">Edit</button>
+        <button class="ghost" data-act="del" title="Delete">✕</button>
+      </div>
+    `;
+
+    // Checkbox toggle
+    el.querySelector('input[type="checkbox"]').addEventListener("change", e=>{
+      t.done = e.target.checked; save(); render();
+    });
+
+    // Inline edit
+    const titleDiv = el.querySelector(".title");
+    titleDiv.addEventListener("blur", ()=>{
+      t.title = titleDiv.textContent.trim(); save(); updateCount();
+    });
+
+    // Buttons
+    el.querySelector('[data-act="del"]').addEventListener("click", ()=>{
+      state = state.filter(x=>x.id!==t.id); save(); render();
+    });
+    el.querySelector('[data-act="edit"]').addEventListener("click", ()=>{
+      const nd = prompt("Set due date (YYYY-MM-DD) or blank", t.due||"") || "";
+      const nt = prompt("Set tag (e.g., #backend) or blank", t.tag||"") || "";
+      t.due = nd; t.tag = nt.trim(); save(); render();
+    });
+
+    // Drag and drop
+    el.addEventListener("dragstart", ()=>{ dragSrcId = t.id; el.style.opacity = .5; });
+    el.addEventListener("dragend", ()=>{ dragSrcId = null; el.style.opacity = 1; });
+    el.addEventListener("dragover", e=>{ e.preventDefault(); });
+    el.addEventListener("drop", e=>{
+      e.preventDefault();
+      if(!dragSrcId || dragSrcId===t.id) return;
+      const from = state.findIndex(x=>x.id===dragSrcId);
+      const to = state.findIndex(x=>x.id===t.id);
+      state.splice(to,0, ...state.splice(from,1));
+      save(); render();
+    });
+
+    return el;
+  }
+
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+  function render(){
+    listEl.innerHTML = "";
+    const q = search.value.trim();
+    state.filter(t=>matchesFilter(t) && matchesSearch(t,q)).forEach(t=> listEl.appendChild(itemTemplate(t)));
+    updateCount();
+  }
+
+  // Events
+  addBtn.addEventListener("click", ()=> addTask(taskInput.value, dueInput.value, tagInput.value));
+  taskInput.addEventListener("keydown", e=>{
+    if(e.key==="Enter"){ addTask(taskInput.value, dueInput.value, tagInput.value); taskInput.value=""; }
+  });
+  filters.forEach(btn=> btn.addEventListener("click", ()=>{
+    filters.forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active"); filter = btn.dataset.filter; render();
+  }));
+  search.addEventListener("input", render);
+  clearDone.addEventListener("click", ()=>{ state = state.filter(t=>!t.done); save(); render(); });
+  exportBtn.addEventListener("click", ()=>{
+    const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "todo-export.json";
+    a.click();
+  });
+  importBtn.addEventListener("click", ()=> importFile.click());
+  importFile.addEventListener("change", async e=>{
+    const f = e.target.files[0]; if(!f) return;
+    const text = await f.text();
+    try{ const data = JSON.parse(text); if(Array.isArray(data)){ state = data; save(); render(); } }catch{ alert("Invalid file"); }
+  });
+
+  // "AI Suggest" — local prompt templates (no external API required)
+  aiSuggest.addEventListener("click", async ()=>{
+    const p = prompt("Describe your goal (e.g., 'prepare for DSA interview', 'ship API v1')");
+    if(!p) return;
+    const suggestions = generateTasks(p);
+    suggestions.forEach(s => addTask(s.title, s.due, s.tag));
+  });
+
+  function generateTasks(promptText){
+    const today = new Date();
+    const plus = d => new Date(today.getTime() + d*24*3600*1000).toISOString().slice(0,10);
+    const base = [
+      {k:/api|backend|service/i, t:[
+        ["Design endpoints & schema","#backend", plus(2)],
+        ["Implement core handlers & validation","#backend", plus(5)],
+        ["Add pagination, caching, and rate limits","#performance", plus(7)],
+        ["Write unit & integration tests","#quality", plus(9)],
+        ["Set up CI and linting","#devops", plus(10)]
+      ]},
+      {k:/interview|dsa|leetcode/i, t:[
+        ["Plan weekly topics & targets","#dsa", plus(1)],
+        ["Solve 15 array+string problems","#dsa", plus(7)],
+        ["Revise trees/graphs + 10 problems","#dsa", plus(14)],
+        ["Mock interview & review","#career", plus(21)]
+      ]},
+      {k:/college|semester|exam|study/i, t:[
+        ["Organize notes & syllabus","#study", plus(1)],
+        ["Daily 2-hr study block","#habit", plus(30)],
+        ["Attempt previous papers","#study", plus(10)],
+        ["Group revision session","#study", plus(12)]
+      ]}
+    ];
+    let picked = base.find(b=>b.k.test(promptText))?.t || [
+      ["Break down the goal into tasks","#plan", plus(1)],
+      ["Prioritize by impact/effort","#plan", plus(2)],
+      ["Schedule & set deadlines","#plan", plus(3)]
+    ];
+    return picked.map(([title, tag, due]) => ({title, tag, due}));
+  }
+})();
+</script>
+</body>
+</html>
